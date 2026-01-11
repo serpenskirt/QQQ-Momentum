@@ -99,8 +99,8 @@ def trigger_webhook(url, signal_type, price, sma, open_p=None):
 
 def run_strategy(mode):
     # Skip execution if market is closed (save API calls)
-    #if not is_market_open():
-        #return
+    if not is_market_open():
+        return
 
     print(f"--- Running {mode.upper()} Logic for {SYMBOL} ---")
     
