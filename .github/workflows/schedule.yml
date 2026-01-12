@@ -33,23 +33,12 @@ jobs:
           OA_WEBHOOK_BUY: ${{ secrets.OA_WEBHOOK_BUY }}
         run: python main.py --mode sell
 
-      # ---------------------------------------------------------
-      # STEP 2: BUY CHECK (RUNS ONLY EVERY 10 MINS)
+# ---------------------------------------------------------
+      # STEP 2: BUY CHECK (Run every time)
       # ---------------------------------------------------------
       - name: Run BUY Strategy
         env:
           TRADIER_TOKEN: ${{ secrets.TRADIER_TOKEN }}
           OA_WEBHOOK_BUY: ${{ secrets.OA_WEBHOOK_BUY }}
           OA_WEBHOOK_SELL: ${{ secrets.OA_WEBHOOK_SELL }}
-        shell: bash
-        run: |
-          # Get the current minute
-          MINUTE=$(date +'%M')
-          
-          # Check if minute ends in 0 (00, 10, 20...)
-          if [[ "$MINUTE" =~ 0$ ]]; then
-            echo "Current minute is $MINUTE. Running BUY logic."
-            python main.py --mode buy
-          else
-            echo "Current minute is $MINUTE. Skipping BUY logic (10m Interval)."
-          fi
+        run: python main.py --mode buy
