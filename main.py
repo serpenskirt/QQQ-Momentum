@@ -41,8 +41,8 @@ def is_market_open():
     return False
 
 def get_market_data():
-    """Fetches real-time quote and historical daily data for SMA."""
-    # 1. Get Real-time Quote (Price and Open)
+    """Fetches real-time quote (including prev close) and historical daily data for SMA."""
+    # 1. Get Real-time Quote
     quote_resp = requests.get(
         f"{TRADIER_URL}/markets/quotes",
         params={'symbols': SYMBOL},
@@ -53,14 +53,15 @@ def get_market_data():
     
     current_price = quote_data['last']
     open_price = quote_data['open']
+    prev_close = quote_data['prevclose']  # Fetches yesterday's closing price
     
-    # 2. Get Historical Data (Last 250 Days to be safe for SMA200)
+    # 2. Get Historical Data (Last 300 Days to be safe for SMA200)
     history_resp = requests.get(
         f"{TRADIER_URL}/markets/history",
         params={
             'symbol': SYMBOL,
             'interval': 'daily',
-            'start': '2023-01-01' # Simplified: In prod, dynamically set this to T-300 days
+            'start': '2023-01-01' # In production, this ensures enough data for 200 SMA
         },
         headers=get_headers()
     )
@@ -71,10 +72,9 @@ def get_market_data():
     df = pd.DataFrame(history)
     
     # Calculate SMA 200 using the last 200 closes
-    # Note: We assume the API returns sorted data. Tail(200) gets the most recent.
     sma_200 = df['close'].tail(200).mean()
     
-    return current_price, open_price, sma_200
+    return current_price, open_price, prev_close, sma_200
 
 def trigger_webhook(url, signal_type, price, sma, open_p=None):
     """Sends payload to Option Alpha."""
@@ -105,20 +105,23 @@ def run_strategy(mode):
     print(f"--- Running {mode.upper()} Logic for {SYMBOL} ---")
     
     try:
-        price, open_price, sma200 = get_market_data()
+        price, open_price, prev_close, sma200 = get_market_data()
     except Exception as e:
         print(f"Error fetching data: {e}")
         return
 
-    print(f"Price: {price} | Open: {open_price} | SMA200: {sma200:.2f}")
+    print(f"Price: {price} | Open: {open_price} | Prev Close: {prev_close} | SMA200: {sma200:.2f}")
 
     # --- BUY LOGIC ---
     if mode == 'buy':
-        # Criteria: Price >= 1.04 * SMA200 AND Price <= 0.99 * Open
+        # Criteria 1: Trend Filter (Price must be 4% above SMA200)
         threshold_sma = sma200 * 1.04
-        threshold_dip = open_price * 0.99
         
-        print(f"Buy Criteria: Price >= {threshold_sma:.2f} AND Price <= {threshold_dip:.2f}")
+        # Criteria 2: Dip Filter (Price must be 1% below PREVIOUS CLOSE)
+        # Using Prev Close captures overnight gap downs
+        threshold_dip = prev_close * 0.99
+        
+        print(f"Buy Criteria: Price >= {threshold_sma:.2f} (SMA+4%) AND Price <= {threshold_dip:.2f} (Close-1%)")
         
         if (price >= threshold_sma) and (price <= threshold_dip):
             print(">>> BUY SIGNAL TRIGGERED <<<")
@@ -128,7 +131,7 @@ def run_strategy(mode):
 
     # --- SELL LOGIC ---
     elif mode == 'sell':
-        # Criteria: Price < 0.97 * SMA200
+        # Criteria: Price < 0.97 * SMA200 (Stop Loss / Exit Condition)
         threshold_sell = sma200 * 0.97
         print(f"Sell Criteria: Price < {threshold_sell:.2f}")
         
